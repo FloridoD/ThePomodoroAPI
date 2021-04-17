@@ -126,45 +126,50 @@ class Database:
         try:
             query = f"SELECT id,username,name,bio,image FROM person WHERE username = '{user_data['username']}';"
             results = self.query(query)
-            data = results["results"][0]
 
             if results is None:
                 return jsonify({"message" : "User not Found"})
             else:
+                data = results.get('results')[0]
+                print(data)
+                data["recipes"] = []
+                recipes = self.getUsersLastNRecipes(user_data['username'],int(user_data['ini']),int(user_data['fim']))
+                
+                for recipe in recipes:
+                    data["recipes"].append(recipe)
+
                 return jsonify(data)
+
         except Exception as e:
+            print("Error" + str(e))
             return jsonify({"message" : "User not Found"})
 
     def getUsersLastNRecipes(self, username, ini, fim):
-        cursor = self.connection.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("SELECT id,name,post_date,rating,image FROM recipe WHERE person_id = (SELECT id FROM person WHERE username = \'%s\');"%(username))
-        if fim >= cursor.rowcount:
-            fim = cursor.rowcount-1
-        try:
-            c = cursor.fetchall()[ini:fim+1]
-            for i in c:
-                i["post_date"] = i["post_date"].strftime("%m/%d/%Y, %H:%M:%S")
-            return c
-        except Exception as e:
-            print(e)
-            return False
+        query = "SELECT id,name,post_date,rating,image FROM recipe WHERE person_id = (SELECT id FROM person WHERE username = \'%s\');"%(username)
+        
+        recipes = self.query(query)
+
+        if recipes is None:
+            return None
+
+        recipes = recipes.get('results')
+
+        if fim > len(recipes): fim = len(recipes) 
+        
+        for recipe in recipes:
+            recipe['post_date'] = recipe['post_date'].strftime("%m/%d/%Y, %H:%M:%S")
+
+        return recipes[ini: fim]
 
     def addRecipe(self, username, recipe_data):
         cursor = self.connection.cursor()
         try:
-            #ingredientes = json.loads(recipe_data['ingredients'])
-            query = f"SELECT id from person where username = '{username}'"
-
-            results = self.query(query)
-            data = results["results"][0]
-
-            id = data.get('id')
-            
-            query = 'INSERT INTO recipe (name, image, description, preparation, post_date, person_id) values (\'%s\',\'%s\',\'%s\',\'%s\',CURRENT_TIMESTAMP, \'%s\') RETURNING id;'%(recipe_data["name"],recipe_data["image"],recipe_data["description"],recipe_data["preparation"],id)
+            ingredientes = json.loads(recipe_data['ingredients'])
+            query = f"INSERT INTO recipe (name, image, description, preparation, post_date, person_id) values('{recipe_data['name']}', '{recipe_data['image']}', '{recipe_data['description']}', '{recipe_data['preparation']}', CURRENT_TIMESTAMP, (SELECT id from person where username = '{username}')) RETURNING id"
             cursor.execute(query)
             id_of_new_row = cursor.fetchone()[0]
             print(query)
-            #self.addIngredients(ingredientes,id_of_new_row)
+            self.addIngredients(ingredientes,id_of_new_row)
         except Exception as e:
             print(e)
             self.connection.commit()
@@ -236,7 +241,8 @@ class User(Resource):
         return self.database.addUser(data)
 
     def get(self):
-        return self.database.getUser(request.form)
+        data = request.get_json()
+        return self.database.getUser(data)
     
     @token_required
     def post(username, self):
