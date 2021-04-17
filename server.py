@@ -260,6 +260,7 @@ class Recipe(Resource):
         return self.database.addRecipe(username, data)
 
     def get(self):
+        data = request.get_json()
         return self.database.getRecipe(request.form["id"])
 
     def delete(self):
