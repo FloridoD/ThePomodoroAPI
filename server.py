@@ -15,7 +15,7 @@ import datetime
 import os
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = str(uuid.uuid1())
+app.config['SECRET_KEY'] = 'secretkey' #str(uuid.uuid1())
 api = Api(app)
 
 def token_required(f):
@@ -113,12 +113,11 @@ class Database:
         try:
             query = f"SELECT id,username,name,bio,image FROM person WHERE username = '{username}';"
             results = self.query(query)
-            data = results["results"][0]
 
             if results is None:
                 return None
             else:
-                return data
+                return results.get("results")[0]
         except Exception:
             return None
 
@@ -145,7 +144,7 @@ class Database:
             return jsonify({"message" : "User not Found"})
 
     def getUsersLastNRecipes(self, username, ini, fim):
-        query = "SELECT id,name,post_date,rating,image FROM recipe WHERE person_id = (SELECT id FROM person WHERE username = \'%s\');"%(username)
+        query = "SELECT id,name,post_date,description,rating,image FROM recipe WHERE person_id = (SELECT id FROM person WHERE username = \'%s\');"%(username)
         
         recipes = self.query(query)
 
@@ -164,7 +163,7 @@ class Database:
     def addRecipe(self, username, recipe_data):
         cursor = self.connection.cursor()
         try:
-            ingredientes = json.loads(recipe_data['ingredients'])
+            ingredientes = recipe_data['ingredients']
             query = f"INSERT INTO recipe (name, image, description, preparation, post_date, person_id) values('{recipe_data['name']}', '{recipe_data['image']}', '{recipe_data['description']}', '{recipe_data['preparation']}', CURRENT_TIMESTAMP, (SELECT id from person where username = '{username}')) RETURNING id"
             cursor.execute(query)
             id_of_new_row = cursor.fetchone()[0]
@@ -183,17 +182,18 @@ class Database:
         cursor = self.connection.cursor(cursor_factory=RealDictCursor)
         query = "INSERT INTO ingredient (name) values "
         for i in ingredientes:
-            query+="('"+i+"'),"
+            query += f"('{i.get('name')}'),"
+
         query = query[:-1]+" ON CONFLICT (name) DO NOTHING;"
         cursor.execute(query)
-        print(query)  
         self.connection.commit()
+        print(query)  
+
         query = "INSERT INTO recipe_ingredient (recipe_id,ingredient_id,quantity) values "
         for i in ingredientes:
-            query+="(%s,(SELECT id FROM ingredient WHERE name = \'%s\'),\'%s\'),"%(recipe_id,i,ingredientes[i])
+            query += f"({recipe_id},(SELECT id FROM ingredient WHERE name = '{i.get('name')}'),'{i.get('quantity')}'),"  
         query = query[:-1]+";"
         cursor.execute(query)
-        print(query)  
         self.connection.commit()
 
     def deleteRecipe(self,recipe_data):
