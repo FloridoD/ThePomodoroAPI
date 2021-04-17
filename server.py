@@ -314,10 +314,10 @@ class Recipe(Resource):
 
     def get(self):
         data = request.get_json()
-        return self.database.getRecipe(request.form["id"])
+        return self.database.getRecipe(request.get_json()["id"])
 
     def delete(self):
-        return self.database.deleteRecipe(request.form)
+        return self.database.deleteRecipe(request.get_json())
 class SearchByIngredients(Resource):
     def __init__(self,database):
         self.database = database
