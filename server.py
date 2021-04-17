@@ -44,6 +44,17 @@ class Database:
         connection = psycopg2.connect(user = "ylhmlqpfkqbwxu",password = "86acc7cb14978bd57697eaa59022eec26a08f1930662da86502de3e39fd30e0d",host = "ec2-54-247-158-179.eu-west-1.compute.amazonaws.com",port = "5432",database = "dadih75qcq1ih")
         self.connection=connection
 
+    def query(self, query_str):
+        cursor = self.connection.cursor()
+        cursor.execute(query_str)
+
+        if cursor.rowcount < 1:
+            return None 
+
+        return {'results':
+            [dict(zip([column[0] for column in cursor.description], row))
+             for row in cursor.fetchall()]}
+    
     def login(self, username, password):
         cursor = self.connection.cursor()
         cursor.execute("SELECT id FROM person WHERE username = '"+username+"' AND password = '"+password+"';")
