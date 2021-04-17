@@ -32,7 +32,6 @@ def token_required(f):
         try:
             data = jwt.decode(token, app.config['SECRET_KEY'])
             username = data['username']
-            print(username)
         except:
             return jsonify({'message': 'Token is invalid'}), 401
 
@@ -80,6 +79,15 @@ class Database:
             print(e)
             return jsonify({'message': 'error'})
 
+    def getFriends(self, user_data):
+        return ''
+
+    def getFriendsRecipes(self, user_data):
+        return ''
+
+    def getLikedRecipes(self, user_data):
+        return ''
+
     def getUser(self,user_data):
         try:
             query = f"SELECT id,username,name,bio,image FROM person WHERE username = '{user_data['username']}';"
@@ -91,7 +99,7 @@ class Database:
                 return jsonify({"message" : "User not Found"})
             else:
                 return jsonify(data)
-                
+
         except Exception as e:
             print("Error:" + str(e))
             return False
