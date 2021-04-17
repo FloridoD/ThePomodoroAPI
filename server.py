@@ -48,6 +48,7 @@ class Database:
         connection = psycopg2.connect(user = "ylhmlqpfkqbwxu",password = "86acc7cb14978bd57697eaa59022eec26a08f1930662da86502de3e39fd30e0d",host = "ec2-54-247-158-179.eu-west-1.compute.amazonaws.com",port = "5432",database = "dadih75qcq1ih")
         self.connection=connection
         self.ingredientes = self.getAllIngredients()
+
     def query(self, query_str):
         cursor = self.connection.cursor()
         cursor.execute(query_str)
@@ -205,20 +206,24 @@ class Database:
         except Exception as e:
             self.connection.commit()
             return False
+
     def getRecipe(self, recipe_id):
         try:
             cursor = self.connection.cursor(cursor_factory=RealDictCursor)
-            cursor.execute("SELECT * FROM recipe WHERE id = \'%s\';"%(recipe_id))
+            query = f'select r.name, r.description, r.preparation, r.rating, r.rates, p.name "author", r.image, r.post_date from recipe r, person p where r.person_id = p.id and r.id = {recipe_id};'
+            cursor.execute(query)
             c = cursor.fetchone()
             c["post_date"] = c["post_date"].strftime("%m/%d/%Y, %H:%M:%S")
             return jsonify({"recipe":c,"ingredients":self.getIngredients(recipe_id)})
         except Exception as e:
             print(e)
             return False
+
     def getIngredients(self, recipe_id):
         cursor = self.connection.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT recipe_ingredient.ingredient_id, ingredient.name, recipe_ingredient.quantity FROM ingredient, recipe_ingredient WHERE recipe_ingredient.recipe_id = \'%s\' AND recipe_ingredient.ingredient_id = ingredient.id;"%(recipe_id))
         return cursor.fetchall()
+
     def getRecipesFromIngredients(self,ingredientes):
         cursor = self.connection.cursor(cursor_factory=RealDictCursor)
         query = "SELECT recipe_id, ingredient_id, recipe FROM recipe_ingredient, recipe WHERE ingredient_id IN (SELECT ingredient.id FROM ingredient WHERE LOWER(ingredient.name) IN ("
@@ -241,6 +246,7 @@ class Database:
             return jsonify(out)
         else:
             return jsonify({'message': 'Sorry, no recipes found'})
+
     def getAllIngredients(self):
         cursor = self.connection.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT name, COUNT(ingredient_id) FROM ingredient, recipe_ingredient WHERE id = ingredient_id GROUP BY name ORDER BY -COUNT(ingredient_id);")
@@ -253,15 +259,19 @@ class Database:
             out += [i["name"]]
         out.sort()
         return out
+
     def getIngredientsFromText(self, query):
         res = [i for i in self.ingredientes if query in i]
         return jsonify(res)
+
     def getRecipeFromText(self, query):
         cursor = self.connection.cursor()
         cursor.execute("SELECT recipe FROM recipe WHERE name LIKE '%"+query+"%';")
         return jsonify(cursor.fetchall())
+
     def rateRecipe(self,username,rate_data):
         try:
+            cursor = self.connection.cursor()
             query = 'INSERT INTO rating (rate, rate_date, recipe_id, person_id) values ('+rate_data['rate']+',CURRENT_TIMESTAMP,'+rate_data['recipe_id']+',(SELECT id FROM person WHERE username = \''+username+'\'));'
             cursor.execute(query)
             self.connection.commit()
@@ -287,49 +297,63 @@ class Login(Resource):
 
 class User(Resource):
     def __init__(self,database):
+        """Estabeleçe conexão com base de dados"""
         self.database = database
     
     def put(self):
+        """Regista um utilizador"""
         data = request.get_json()
         return self.database.addUser(data)
 
     def get(self):
+        """Retorna os dados dum utilizador"""
         data = request.get_json()
         return self.database.getUser(data)
     
     @token_required
     def post(username, self):
+        """Atualiza os dados dum utilizador"""
         data = request.get_json()
         return self.database.editUser(username, data)
 
 
 class Recipe(Resource):
     def __init__(self,database):
+        """Estabeleçe conexão com base de dados"""
         self.database = database
 
     @token_required
     def post(username, self):
+        """Cria uma receita associada a um utilizador"""
         data = request.get_json()
         return self.database.addRecipe(username, data)
 
     def get(self):
-        data = request.get_json()
-        return self.database.getRecipe(request.form["id"])
+        """Retorna uma receita com base no id"""
+        id = request.get_json().get('id')
+        return self.database.getRecipe(id)
 
     def delete(self):
+        """Elimina uma receita da base de dados"""
         return self.database.deleteRecipe(request.form)
+
 class SearchByIngredients(Resource):
     def __init__(self,database):
         self.database = database
+
     def post(self):
         return self.database.getRecipesFromIngredients(request.get_json()['ingredients'])
+
     def get(self):
         return self.database.getIngredientsFromText(request.get_json()['query'])
+
 class SearchByName(Resource):
     def __init__(self,database):
         self.database = database
+
     def post(self):
         return self.database.getRecipeFromText(request.get_json()['query'])
+
 database = Database()
 api.add_resource(Login, '/login',resource_class_args=(database,))
 api.add_resource(User, '/user',resource_class_args=(database,))
