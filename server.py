@@ -6,6 +6,7 @@ from flask import Flask, request, jsonify, make_response
 from flask.helpers import make_response
 from flask_restful import Api, Resource, reqparse, abort, fields, marshal_with
 from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS, cross_origin
 from psycopg2.extras import RealDictCursor
 import psycopg2, uuid
 import json
@@ -17,6 +18,7 @@ import os
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secretkey' #str(uuid.uuid1())
 api = Api(app)
+CORS(app, support_credentials=True)
 
 def token_required(f):
     @wraps(f)
@@ -265,11 +267,13 @@ class Database:
         return jsonify(res)
 
     def getRecipeFromText(self, query):
+        """Get recipe from text"""
         cursor = self.connection.cursor()
         cursor.execute("SELECT recipe FROM recipe WHERE name LIKE '%"+query+"%';")
         return jsonify(cursor.fetchall())
 
     def rateRecipe(self,username,rate_data):
+        """Add rating to recipe"""
         try:
             cursor = self.connection.cursor()
             query = 'INSERT INTO rating (rate, rate_date, recipe_id, person_id) values ('+rate_data['rate']+',CURRENT_TIMESTAMP,'+rate_data['recipe_id']+',(SELECT id FROM person WHERE username = \''+username+'\'));'
@@ -286,7 +290,8 @@ class Database:
 class Login(Resource):
     def __init__(self,database):
         self.database = database
-
+        
+    @cross_origin(supports_credentials=True)
     def get(self):
         auth = request.authorization
 
@@ -339,20 +344,28 @@ class Recipe(Resource):
 
 class SearchByIngredients(Resource):
     def __init__(self,database):
+        """Estabeleçe conexão com base de dados"""
         self.database = database
 
     def post(self):
-        return self.database.getRecipesFromIngredients(request.get_json()['ingredients'])
+        """Retorna uma receita com base em ingredientes apresentados"""
+        data = request.get_json().get('ingredients')
+        return self.database.getRecipesFromIngredients(data)
 
     def get(self):
-        return self.database.getIngredientsFromText(request.get_json()['query'])
+        """Retorna igredientes com base em texto"""
+        data = request.get_json().get('query')
+        return self.database.getIngredientsFromText(data)
 
 class SearchByName(Resource):
     def __init__(self,database):
+        """Estabeleçe conexão com base de dados"""
         self.database = database
 
     def post(self):
-        return self.database.getRecipeFromText(request.get_json()['query'])
+        """Retorna receitas com base no texto submetido"""
+        data = request.get_json().get('query')
+        return self.database.getRecipeFromText(data)
 
 database = Database()
 api.add_resource(Login, '/login',resource_class_args=(database,))
