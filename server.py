@@ -105,18 +105,6 @@ class Database:
             self.connection.commit()
             return jsonify({'message': 'Username already exists'})
 
-    def getFriends(self, user_data):
-
-        return ''
-
-    def getFriendsRecipes(self, user_data):
-
-        return ''
-
-    def getLikedRecipes(self, user_data):
-
-        return ''
-
     def editUser(self,username,user_data):
         cursor = self.connection.cursor(cursor_factory=RealDictCursor)
 
@@ -313,6 +301,7 @@ class Database:
                 return jsonify({'message': 'Error'})
         else:
             return jsonify({'message': 'User already voted'})
+            
     def getUsersRateOnRecipe(self, user, recipe):
         try:
             query = "SELECT rate FROM rating WHERE person_id = (SELECT id FROM person WHERE username = %s) AND recipe_id = \'%\'"%(user,recipe)
@@ -324,6 +313,7 @@ class Database:
         except Exception as e:
             print(e)
             return jsonify({'message': 'Error'})
+
     def follow(self,username,person):
         try:
             cursor = self.connection.cursor()
@@ -339,6 +329,7 @@ class Database:
             print(e)
             self.connection.commit()
             return jsonify({'message': 'Error'})
+
     def isFollowing(self,username,person):
         query = 'SELECT * FROM person_person WHERE person_id = (SELECT id FROM person WHERE username = \'%s\') AND person_id1 = (SELECT id FROM person WHERE username = \'%s\');'%(person,username)
         if self.query() != None:
