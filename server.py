@@ -37,7 +37,7 @@ def upload_local_image():
 
 def upload_image(image):
     return cloudinary.uploader.unsigned_upload(image, preset, cloud_name = "the-pomodoro").get('url')
-    
+
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -299,6 +299,7 @@ class Database:
     def rateRecipe(self,username,rate_data):
         """Add rating to recipe"""
         if(self.getUsersRateOnRecipe(username,rate_data['recipe_id']) != None):
+            cursor = self.connection.cursor(cursor_factory=RealDictCursor)
             try:
                 query = 'INSERT INTO rating (rate, rate_date, recipe_id, person_id) values ('+rate_data['rate']+',CURRENT_TIMESTAMP,'+rate_data['recipe_id']+',(SELECT id FROM person WHERE username = \''+username+'\'));'
                 cursor.execute(query)
