@@ -400,8 +400,7 @@ class Database:
 class Login(Resource):
     def __init__(self,database):
         self.database = database
-        
-    @cross_origin(supports_credentials=True)
+
     def get(self):
         auth = request.authorization
 
