@@ -33,12 +33,12 @@ def upload_local_image():
     with open("image.jpg", "rb") as f:
         data = f.read()
         image = bytearray(data)
-        url = cloudinary.uploader.unsigned_upload(image, preset, cloud_name = cloud).get('url')
+        url = cloudinary.uploader.unsigned_upload(image, preset, cloud_name = "the-pomodoro").get('url')
 
     return url
 
 def upload_image(image):
-    return cloudinary.uploader.unsigned_upload(image, preset, cloud_name = cloud).get('url')
+    return cloudinary.uploader.unsigned_upload(image, preset, cloud_name = "the-pomodoro").get('url')
 
 def token_required(f):
     @wraps(f)
@@ -287,7 +287,7 @@ class Database:
         
     def getRecipeFromText(self, query):
         """Get recipe from text"""
-        results = self.query("SELECT * FROM recipe WHERE name LIKE '%"+query+"%';")
+        results = self.query("SELECT recipe.*, person.name as \"author\" FROM recipe, person WHERE recipe.name LIKE '%"+query+"%' AND recipe.person_id = person.id;")
         return jsonify(results)
 
     def rateRecipe(self,username,rate_data):
@@ -405,21 +405,24 @@ class Database:
             query = 'SELECT username, id, name FROM person,person_person WHERE id = person_id AND person_id1 = (SELECT id FROM person WHERE username = \'%s\');'%(username)
             following = self.query(query)
             query = 'SELECT recipe.*, rate, rate_date FROM recipe, rating WHERE rating.person_id IN ('
-            for i in following["results"]:
-                query+=str(i['id'])+","
-            query = query[:-1] + ') AND recipe.id = rating.recipe_id ORDER BY rate_date DESC;'
-            print(query)
-            results = self.query(query)
-            if results != None:
-                results = results['results']
-            if results != None and fim >= len(results):
-                fim = len(results)-1
-            try:
-                rates = results[ini:fim]
-            except Exception as e:
-                print(e)
+            if following != None:
+                for i in following["results"]:
+                    query+=str(i['id'])+","
+                query = query[:-1] + ') AND recipe.id = rating.recipe_id ORDER BY rate_date DESC;'
+                print(query)
+                results = self.query(query)
+                if results != None:
+                    results = results['results']
+                if results != None and fim >= len(results):
+                    fim = len(results)-1
+                try:
+                    rates = results[ini:fim]
+                except Exception as e:
+                    print(e)
+                    rates = None
+            else:
                 rates = None
-            query = 'SELECT * FROM recipe ORDER BY -rates;'
+            query = 'SELECT recipe.*,person.name as "author" FROM recipe,person WHERE recipe.person_id = person.id ORDER BY -rates;'
             results = self.query(query)
             if results != None:
                 results = results['results']
@@ -550,15 +553,6 @@ class UserRateHistory(Resource):
         self.database = database 
     def get(self):
         return self.database.getRatedRecipes(request.args['username'])
-
-class Feed(Resource):
-    def __init__(self,database):
-        self.database = database
-    
-    @token_required
-    def get(self,username):
-        data = request.get_json()
-
 class ValidateToken(Resource):
     def __init__(self,database):
         self.database = database
@@ -566,9 +560,7 @@ class ValidateToken(Resource):
     @token_required
     def get(username, self):
         return jsonify({"message" : "Token is valid!"})
-
 database = Database()
-api.add_resource(ValidateToken, '/token', resource_class_args=(database,))
 api.add_resource(Login, '/login',resource_class_args=(database,))
 api.add_resource(User, '/user',resource_class_args=(database,))
 api.add_resource(Recipe, '/recipe',resource_class_args=(database,))
@@ -580,7 +572,7 @@ api.add_resource(Following, '/following',resource_class_args=(database,))
 api.add_resource(MainScreen, '/main_screen',resource_class_args=(database,))
 api.add_resource(FollowUser, '/follow',resource_class_args=(database,))
 api.add_resource(UserRateHistory, '/history',resource_class_args=(database,))
-
+api.add_resource(ValidateToken, '/token', resource_class_args=(database,))
 if __name__ == "__main__": 
     #upload_image()
     app.run(debug=True)
