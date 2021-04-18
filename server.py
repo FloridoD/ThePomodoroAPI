@@ -6,6 +6,7 @@ from flask import Flask, request, jsonify, make_response
 from flask.helpers import make_response
 from flask_restful import Api, Resource, reqparse, abort, fields, marshal_with
 from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS, cross_origin
 from psycopg2.extras import RealDictCursor
 import cloudinary
 from cloudinary.uploader import upload
@@ -20,6 +21,7 @@ import os
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secretkey' #str(uuid.uuid1())
 api = Api(app)
+CORS(app, support_credentials=True)
 
 cloud = "the-pomodoro"
 preset = "atzts87s"
@@ -68,6 +70,7 @@ class Database:
         connection = psycopg2.connect(user = "ylhmlqpfkqbwxu",password = "86acc7cb14978bd57697eaa59022eec26a08f1930662da86502de3e39fd30e0d",host = "ec2-54-247-158-179.eu-west-1.compute.amazonaws.com",port = "5432",database = "dadih75qcq1ih")
         self.connection=connection
         self.ingredientes = self.getAllIngredients()
+        self.updatecountdown = 0
 
     def query(self, query_str):
         cursor = self.connection.cursor()
@@ -84,7 +87,7 @@ class Database:
         cursor = self.connection.cursor()
         cursor.execute("SELECT id FROM person WHERE username = '"+username+"' AND password = '"+password+"';")
         if cursor.rowcount < 1:
-            return make_response('Could not verify', 401, {'WWW-Authenticate' : 'Basic realm="Login Required!"'})
+            return make_response(jsonify({"message":'Could not verify'}), 401, {'WWW-Authenticate' : 'Basic realm="Login Required!"'})
         else:
             expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=30)
 
@@ -185,6 +188,9 @@ class Database:
 
         self.connection.commit()
         cursor.close()
+        self.updatecountdown+=1
+        if(self.updatecountdown%10 == 0):
+            self.ingredientes = self.getAllIngredients()
         return jsonify({'message' : 'sucess'})
 
     def addIngredients(self,ingredientes, recipe_id):
@@ -286,13 +292,13 @@ class Database:
 
     def rateRecipe(self,username,rate_data):
         """Add rating to recipe"""
-        if(self.getUsersRateOnRecipe(username,rate_data['recipe_id']) != None):
-            cursor = self.connection.cursor(cursor_factory=RealDictCursor)
+        cursor = self.connection.cursor(cursor_factory=RealDictCursor)
+        if(self.getUsersRateOnRecipe(username,rate_data['recipe_id']) != None and rate_data['rate'] <= 5 and rate_data["rate"] >= 1):
             try:
-                query = 'INSERT INTO rating (rate, rate_date, recipe_id, person_id) values ('+rate_data['rate']+',CURRENT_TIMESTAMP,'+rate_data['recipe_id']+',(SELECT id FROM person WHERE username = \''+username+'\'));'
+                query = 'INSERT INTO rating (rate, rate_date, recipe_id, person_id) values ('+str(rate_data['rate'])+',CURRENT_TIMESTAMP,'+str(rate_data['recipe_id'])+',(SELECT id FROM person WHERE username = \''+username+'\'));'
                 cursor.execute(query)
                 self.connection.commit()
-                cursor.execute('UPDATE recipe SET rating = rating*(1-1/(rates+1)) + %s*(1/(rates+1)), rates = rates + 1;'%(rate_data['rate']))
+                cursor.execute('UPDATE recipe SET rating = rating*(1-1/(rates+1)) + %s*(1/(rates+1)), rates = rates + 1 WHERE recipe_id = \'%s\';'%(str(rate_data['rate'])),str(rate_data['recipe_id']))
                 self.connection.commit()
                 return jsonify({'message': 'Rating Inserted'})
             except Exception as e:
@@ -300,8 +306,24 @@ class Database:
                 self.connection.commit()
                 return jsonify({'message': 'Error'})
         else:
-            return jsonify({'message': 'User already voted'})
-
+            return jsonify({'message': 'Error'})
+    def unrateRecipe(self,username,rate_data):
+        """remove rating to recipe"""
+        cursor = self.connection.cursor(cursor_factory=RealDictCursor)
+        if(self.getUsersRateOnRecipe(username,rate_data['recipe_id']) == None):
+            try:
+                cursor.execute('UPDATE recipe SET rating = rating*(1-1/(rates)) - (SELECT rate FROM rating WHERE person_id = (SELECT id FROM person WHERE username = \'%s\'))*(1/(rates)), rates = rates - 1 WHERE recipe_id = \'%s\';'%(username,str(rate_data['recipe_id'])))
+                self.connection.commit()
+                query = 'DELETE FROM rating WHERE recipe_id = \'%s\' AND person_id = (SELECT id FROM person WHERE username = \'%s\');'%(rate_data['recipe_id'],username)
+                cursor.execute(query)
+                self.connection.commit()
+                return jsonify({'message': 'Rating deleted'})
+            except Exception as e:
+                print(e)
+                self.connection.commit()
+                return jsonify({'message': 'Error'})
+        else:
+            return jsonify({'message': 'Error'})
     def getUsersRateOnRecipe(self, user, recipe):
         try:
             query = "SELECT rate FROM rating WHERE person_id = (SELECT id FROM person WHERE username = %s) AND recipe_id = \'%\'"%(user,recipe)
@@ -313,39 +335,105 @@ class Database:
         except Exception as e:
             print(e)
             return jsonify({'message': 'Error'})
-
     def follow(self,username,person):
-        try:
-            cursor = self.connection.cursor()
-            query = 'UPDATE person SET followers = followers + 1 WHERE username = \'%s\';'%(person)
-            cursor.execute(query)
-            self.connection.commit()
-            query = 'UPDATE person SET following = following + 1 WHERE username = \'%s\';'%(username)
-            cursor.execute(query)
-            self.connection.commit()
-            query = 'INSERT INTO person_person (person_id,person_id1) values ((SELECT id FROM person WHERE username = \'%s\'),(SELECT id FROM person WHERE username = \'%s\'));'%(person,username)
-            self.connection.commit()
-        except Exception as e:
-            print(e)
-            self.connection.commit()
-            return jsonify({'message': 'Error'})
+        if not self.isFollowing(username,person):
+            try:
+                cursor = self.connection.cursor()
+                query = 'UPDATE person SET followers = followers + 1 WHERE username = \'%s\';'%(person)
+                cursor.execute(query)
+                self.connection.commit()
+                query = 'UPDATE person SET following = following + 1 WHERE username = \'%s\';'%(username)
+                cursor.execute(query)
+                self.connection.commit()
+                query = 'INSERT INTO person_person (person_id,person_id1) values ((SELECT id FROM person WHERE username = \'%s\'),(SELECT id FROM person WHERE username = \'%s\'));'%(person,username)
+                cursor.execute(query)
+                self.connection.commit()
+                return jsonify({'message': 'Success'})
+            except Exception as e:
+                print(e)
+                self.connection.commit()
+                return jsonify({'message': 'Error'})
+        else:
+            return jsonify({'message': 'Already following'})
 
+    def unfollow(self,username,person):
+        if self.isFollowing(username,person):
+            try:
+                cursor = self.connection.cursor()
+                query = 'UPDATE person SET followers = followers - 1 WHERE username = \'%s\';'%(person)
+                cursor.execute(query)
+                self.connection.commit()
+                query = 'UPDATE person SET following = following - 1 WHERE username = \'%s\';'%(username)
+                cursor.execute(query)
+                self.connection.commit()
+                query = 'DELETE FROM person_person WHERE person_id = (SELECT id FROM person WHERE username = \'%s\') AND person_id1 = (SELECT id FROM person WHERE username = \'%s\');'%(person,username)
+                cursor.execute(query)
+                self.connection.commit()
+                return jsonify({'message': 'Success'})
+            except Exception as e:
+                print(e)
+                self.connection.commit()
+                return jsonify({'message': 'Error'})
+        else:
+            return jsonify({'message': 'Already not following'})
     def isFollowing(self,username,person):
         query = 'SELECT * FROM person_person WHERE person_id = (SELECT id FROM person WHERE username = \'%s\') AND person_id1 = (SELECT id FROM person WHERE username = \'%s\');'%(person,username)
-        if self.query() != None:
+        if self.query(query) == None:
             return False
         else:
             return True
-    
-    def feed(self, username):
-        query = f"SELECT person_id1 FROM person_person WHERE person_id = (SELECT person_id from person where username = {username});"
+    def getFollowing(self, username):
+        query = 'SELECT username, id, name FROM person,person_person WHERE id = person_id AND person_id1 = (SELECT id FROM person WHERE username = \'%s\');'%(username)
         results = self.query(query)
+        return jsonify(results)
+    def getFollowers(self, username):
+        query = 'SELECT username, id, name FROM person,person_person WHERE id = person_id1 AND person_id = (SELECT id FROM person WHERE username = \'%s\');'%(username)
+        results = self.query(query)
+        return jsonify(results)
 
-        if results == 'None': return jsonify({"message" : "There are no recipes in timeline"})
+    def getRatedRecipes(self, username):
+        query = 'SELECT recipe.*, rate, rate_date FROM recipe, rating WHERE rating.person_id = (SELECT id FROM person WHERE username = \'%s\') AND recipe.id = rating.recipe_id ORDER BY date_rate DESC;'%(username)
+        results = self.query(query)
+        return jsonify(results)
 
-        users = results.get('results')
+    def getMainScreen(self, username, ini, fim):
 
-        query = f"SELECT "
+        try:
+            ini = int(ini)
+            fim = int(fim)
+            fim2 = fim
+            query = 'SELECT username, id, name FROM person,person_person WHERE id = person_id AND person_id1 = (SELECT id FROM person WHERE username = \'%s\');'%(username)
+            following = self.query(query)
+            query = 'SELECT recipe.*, rate, rate_date FROM recipe, rating WHERE rating.person_id IN ('
+            for i in following["results"]:
+                query+=str(i['id'])+","
+            query = query[:-1] + ') AND recipe.id = rating.recipe_id ORDER BY rate_date DESC;'
+            print(query)
+            results = self.query(query)
+            if results != None:
+                results = results['results']
+            if results != None and fim >= len(results):
+                fim = len(results)-1
+            try:
+                rates = results[ini:fim]
+            except Exception as e:
+                print(e)
+                rates = None
+            query = 'SELECT * FROM recipe ORDER BY -rates;'
+            results = self.query(query)
+            if results != None:
+                results = results['results']
+            if results != None and fim2 >= len(results):
+                fim2 = len(results)-1
+            try:
+                recipes = results[ini:fim2]
+            except Exception as e:
+                print(e)
+                recipes = None
+            return jsonify({"rates":rates,"recipes":recipes})
+        except Exception as e:
+            print(e)
+            return jsonify({'message': 'Nothing to see'})
 
 class Login(Resource):
     def __init__(self,database):
@@ -355,7 +443,7 @@ class Login(Resource):
         auth = request.authorization
 
         if not auth or not auth.username or not auth.password:
-            return make_response('Could not verify', 401, {'WWW-Authenticate' : 'Basic realm="Login Required!"'})
+            return make_response(jsonify({"message":'Could not verify'}), 401, {'WWW-Authenticate' : 'Basic realm="Login Required!"'})
 
         return self.database.login(auth.username, auth.password)
 
@@ -371,7 +459,7 @@ class User(Resource):
 
     def get(self):
         """Retorna os dados dum utilizador"""
-        data = request.get_json()
+        data = request.args
         return self.database.getUser(data)
     
     @token_required
@@ -394,7 +482,7 @@ class Recipe(Resource):
 
     def get(self):
         """Retorna uma receita com base no id"""
-        id = request.get_json().get('id')
+        id = request.args.get('id')
         return self.database.getRecipe(id)
 
     def delete(self):
@@ -409,7 +497,7 @@ class SearchByIngredients(Resource):
         return self.database.getRecipesFromIngredients(request.get_json()['ingredients'])
 
     def get(self):
-        return self.database.getIngredientsFromText(request.get_json()['query'])
+        return self.database.getIngredientsFromText(request.args['query'])
 
 class SearchByName(Resource):
     def __init__(self,database):
@@ -418,15 +506,50 @@ class SearchByName(Resource):
     def post(self):
         return self.database.getRecipeFromText(request.get_json()['query'])
 
-class Rate(Resource):
+class RateRecipe(Resource):
     def __init__(self,database):
         self.database = database
     @token_required
-    def post(self,username):
+    def post(username,self):
         return self.database.rateRecipe(username,request.get_json())
     @token_required
-    def get(self,username):
-        return self.database.getUsersRateOnRecipe(username,request.get_json()['recipe_id'])
+    def get(username,self):
+        return self.database.getUsersRateOnRecipe(username,request.args['recipe_id'])
+    @token_required
+    def delete(username,self):
+        return self.database.unrateRecipe(username,request.get_json())
+class Followers(Resource):
+    def __init__(self,database):
+        self.database = database
+    def get(self):
+        return self.database.getFollowers(request.args['username'])
+    @token_required
+    def delete(username,self):
+        return self.database.unfollow(username,request.get_json()['person'])
+class Following(Resource):
+    def __init__(self,database):
+        self.database = database
+    def get(self):
+        return self.database.getFollowing(request.args['username'])
+class MainScreen(Resource):
+    def __init__(self,database):
+        self.database = database 
+    def get(self):
+        return self.database.getMainScreen(requests.args['username'],request.args['ini'],request.args['fim'])
+class FollowUser(Resource):
+    def __init__(self,database):
+        self.database = database 
+    @token_required
+    def get(username,self):
+        return self.database.isFollowing(username,request.args['person'])
+    @token_required
+    def post(username,self):
+        return self.database.follow(username,request.get_json()['person'])
+class UserRateHistory(Resource):
+    def __init__(self,database):
+        self.database = database 
+    def get(self):
+        return self.database.getRatedRecipes(request.args['username'])
 
 class Feed(Resource):
     def __init__(self,database):
@@ -443,6 +566,12 @@ api.add_resource(User, '/user',resource_class_args=(database,))
 api.add_resource(Recipe, '/recipe',resource_class_args=(database,))
 api.add_resource(SearchByIngredients, '/search_by_ingredients',resource_class_args=(database,))
 api.add_resource(SearchByName, '/search_by_name',resource_class_args=(database,))
+api.add_resource(RateRecipe, '/rate',resource_class_args=(database,))
+api.add_resource(Followers, '/followers',resource_class_args=(database,))
+api.add_resource(Following, '/following',resource_class_args=(database,))
+api.add_resource(MainScreen, '/main_screen',resource_class_args=(database,))
+api.add_resource(FollowUser, '/follow',resource_class_args=(database,))
+api.add_resource(UserRateHistory, '/history',resource_class_args=(database,))
 
 if __name__ == "__main__": 
     #upload_image()
