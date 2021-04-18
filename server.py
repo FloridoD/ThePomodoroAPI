@@ -6,7 +6,6 @@ from flask import Flask, request, jsonify, make_response
 from flask.helpers import make_response
 from flask_restful import Api, Resource, reqparse, abort, fields, marshal_with
 from flask_sqlalchemy import SQLAlchemy
-from flask_cors import CORS, cross_origin
 from psycopg2.extras import RealDictCursor
 import psycopg2, uuid
 import json
@@ -18,7 +17,6 @@ import os
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secretkey' #str(uuid.uuid1())
 api = Api(app)
-CORS(app, support_credentials=True)
 
 def token_required(f):
     @wraps(f)
@@ -87,17 +85,6 @@ class Database:
             self.connection.commit()
             return jsonify({'message': 'Username already exists'})
 
-    def getFriends(self, user_data):
-
-        return ''
-
-    def getFriendsRecipes(self, user_data):
-
-        return ''
-
-    def getLikedRecipes(self, user_data):
-
-        return ''
 
     def editUser(self,username,user_data):
         cursor = self.connection.cursor(cursor_factory=RealDictCursor)
@@ -225,22 +212,21 @@ class Database:
         cursor = self.connection.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT recipe_ingredient.ingredient_id, ingredient.name, recipe_ingredient.quantity FROM ingredient, recipe_ingredient WHERE recipe_ingredient.recipe_id = \'%s\' AND recipe_ingredient.ingredient_id = ingredient.id;"%(recipe_id))
         return cursor.fetchall()
-
     def getRecipesFromIngredients(self,ingredientes):
-        cursor = self.connection.cursor(cursor_factory=RealDictCursor)
-        query = "SELECT recipe_id, ingredient_id, recipe FROM recipe_ingredient, recipe WHERE ingredient_id IN (SELECT ingredient.id FROM ingredient WHERE LOWER(ingredient.name) IN ("
+        query = "SELECT recipe_id, ingredient_id, recipe.* FROM recipe_ingredient, recipe WHERE ingredient_id IN (SELECT ingredient.id FROM ingredient WHERE LOWER(ingredient.name) IN ("
         for i in ingredientes:
             query+="'"+i+"',"
         query = query[:-1] + ")) AND recipe_id = id;"
-        cursor.execute(query)
+        results = self.query(query)
         print(query)
         dic = {}
         out = {}
-        for i in cursor.fetchall():
+        print(results)
+        for i in results["results"]:
             if i["recipe_id"] in dic:
                 dic[i["recipe_id"]]+= [i["ingredient_id"]]
             else:
-                dic[i["recipe_id"]] = [i["recipe"]]
+                dic[i["recipe_id"]] = [i]
         for i in dic:
             if len(ingredientes) == len(dic[i]):
                 out[i] = dic[i][0]
@@ -248,7 +234,6 @@ class Database:
             return jsonify(out)
         else:
             return jsonify({'message': 'Sorry, no recipes found'})
-
     def getAllIngredients(self):
         cursor = self.connection.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT name, COUNT(ingredient_id) FROM ingredient, recipe_ingredient WHERE id = ingredient_id GROUP BY name ORDER BY -COUNT(ingredient_id);")
@@ -261,37 +246,63 @@ class Database:
             out += [i["name"]]
         out.sort()
         return out
-
     def getIngredientsFromText(self, query):
-        res = [i for i in self.ingredientes if query in i]
+        res = []
+        n = 0
+        for i in self.ingredientes:
+            if query in i:
+                res += [i]
+                n +=1
+            if n == 5:
+                break
         return jsonify(res)
-
     def getRecipeFromText(self, query):
-        """Get recipe from text"""
-        cursor = self.connection.cursor()
-        cursor.execute("SELECT recipe FROM recipe WHERE name LIKE '%"+query+"%';")
-        return jsonify(cursor.fetchall())
-
+        results = self.query("SELECT * FROM recipe WHERE name LIKE '%"+query+"%';")
+        return jsonify(results)
     def rateRecipe(self,username,rate_data):
-        """Add rating to recipe"""
+        if(self.getUsersRateOnRecipe(username,rate_data['recipe_id']) != None):
+            try:
+                query = 'INSERT INTO rating (rate, rate_date, recipe_id, person_id) values ('+rate_data['rate']+',CURRENT_TIMESTAMP,'+rate_data['recipe_id']+',(SELECT id FROM person WHERE username = \''+username+'\'));'
+                cursor.execute(query)
+                self.connection.commit()
+                cursor.execute('UPDATE recipe SET rating = rating*(1-1/(rates+1)) + %s*(1/(rates+1)), rates = rates + 1;'%(rate_data['rate']))
+                self.connection.commit()
+                return jsonify({'message': 'Rating Inserted'})
+            except Exception as e:
+                print(e)
+                self.connection.commit()
+                return jsonify({'message': 'Error'})
+        else:
+            return jsonify({'message': 'User already voted'})
+    def getUsersRateOnRecipe(self, user, recipe):
         try:
-            cursor = self.connection.cursor()
-            query = 'INSERT INTO rating (rate, rate_date, recipe_id, person_id) values ('+rate_data['rate']+',CURRENT_TIMESTAMP,'+rate_data['recipe_id']+',(SELECT id FROM person WHERE username = \''+username+'\'));'
-            cursor.execute(query)
-            self.connection.commit()
-            cursor.execute('UPDATE recipe SET rating = rating*(1-1/(rates+1)) + %s*(1/(rates+1)), rates = rates + 1;'%(rate_data['rate']))
-            self.connection.commit()
-            return jsonify({'message': 'Rating Inserted'})
+            query = "SELECT rate FROM rating WHERE person_id = (SELECT id FROM person WHERE username = %s) AND recipe_id = \'%\'"%(user,recipe)
+            results = self.query(query)
+            if results != None:
+                return jsonify(results)
+            else:
+                return None
         except Exception as e:
             print(e)
-            self.connection.commit()
             return jsonify({'message': 'Error'})
+    def follow(self,username,person):
+        return ''
+    def getFriends(self, user_data):
+
+        return ''
+
+    def getFriendsRecipes(self, user_data):
+
+        return ''
+
+    def getLikedRecipes(self, user_data):
+
+        return ''
 
 class Login(Resource):
     def __init__(self,database):
         self.database = database
-        
-    @cross_origin(supports_credentials=True)
+
     def get(self):
         auth = request.authorization
 
@@ -344,28 +355,30 @@ class Recipe(Resource):
 
 class SearchByIngredients(Resource):
     def __init__(self,database):
-        """Estabeleçe conexão com base de dados"""
         self.database = database
 
     def post(self):
-        """Retorna uma receita com base em ingredientes apresentados"""
-        data = request.get_json().get('ingredients')
-        return self.database.getRecipesFromIngredients(data)
+        return self.database.getRecipesFromIngredients(request.get_json()['ingredients'])
 
     def get(self):
-        """Retorna igredientes com base em texto"""
-        data = request.get_json().get('query')
-        return self.database.getIngredientsFromText(data)
+        return self.database.getIngredientsFromText(request.get_json()['query'])
 
 class SearchByName(Resource):
     def __init__(self,database):
-        """Estabeleçe conexão com base de dados"""
         self.database = database
 
     def post(self):
-        """Retorna receitas com base no texto submetido"""
-        data = request.get_json().get('query')
-        return self.database.getRecipeFromText(data)
+        return self.database.getRecipeFromText(request.get_json()['query'])
+
+class Rate(Resource):
+    def __init__(self,database):
+        self.database = database
+    @token_required
+    def post(self,username):
+        return self.database.rateRecipe(username,request.get_json())
+    @token_required
+    def get(self,username):
+        return self.database.getUsersRateOnRecipe(username,request.get_json()['recipe_id'])
 
 database = Database()
 api.add_resource(Login, '/login',resource_class_args=(database,))
