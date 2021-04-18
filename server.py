@@ -6,6 +6,7 @@ from flask import Flask, request, jsonify, make_response
 from flask.helpers import make_response
 from flask_restful import Api, Resource, reqparse, abort, fields, marshal_with
 from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS, cross_origin
 from psycopg2.extras import RealDictCursor
 import psycopg2, uuid
 import json
@@ -17,6 +18,7 @@ import os
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secretkey' #str(uuid.uuid1())
 api = Api(app)
+CORS(app, support_credentials=True)
 
 def token_required(f):
     @wraps(f)
