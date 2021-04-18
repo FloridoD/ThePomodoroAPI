@@ -227,20 +227,20 @@ class Database:
         return cursor.fetchall()
 
     def getRecipesFromIngredients(self,ingredientes):
-        cursor = self.connection.cursor(cursor_factory=RealDictCursor)
-        query = "SELECT recipe_id, ingredient_id, recipe FROM recipe_ingredient, recipe WHERE ingredient_id IN (SELECT ingredient.id FROM ingredient WHERE LOWER(ingredient.name) IN ("
+        query = "SELECT recipe_id, ingredient_id, recipe.* FROM recipe_ingredient, recipe WHERE ingredient_id IN (SELECT ingredient.id FROM ingredient WHERE LOWER(ingredient.name) IN ("
         for i in ingredientes:
             query+="'"+i+"',"
         query = query[:-1] + ")) AND recipe_id = id;"
-        cursor.execute(query)
+        results = self.query(query)
         print(query)
         dic = {}
         out = {}
-        for i in cursor.fetchall():
+        print(results)
+        for i in results["results"]:
             if i["recipe_id"] in dic:
                 dic[i["recipe_id"]]+= [i["ingredient_id"]]
             else:
-                dic[i["recipe_id"]] = [i["recipe"]]
+                dic[i["recipe_id"]] = [i]
         for i in dic:
             if len(ingredientes) == len(dic[i]):
                 out[i] = dic[i][0]
@@ -263,14 +263,21 @@ class Database:
         return out
 
     def getIngredientsFromText(self, query):
-        res = [i for i in self.ingredientes if query in i]
+        res = []
+        n = 0
+        for i in self.ingredientes:
+            if query in i:
+                res += [i]
+                n +=1
+            if n == 5:
+                break
         return jsonify(res)
 
     def getRecipeFromText(self, query):
         """Get recipe from text"""
-        cursor = self.connection.cursor()
-        cursor.execute("SELECT recipe FROM recipe WHERE name LIKE '%"+query+"%';")
-        return jsonify(cursor.fetchall())
+        def getRecipeFromText(self, query):
+        results = self.query("SELECT * FROM recipe WHERE name LIKE '%"+query+"%';")
+        return jsonify(results)
 
     def rateRecipe(self,username,rate_data):
         """Add rating to recipe"""
