@@ -559,8 +559,16 @@ class Feed(Resource):
     def get(self,username):
         data = request.get_json()
 
+class ValidateToken(Resource):
+    def __init__(self,database):
+        self.database = database
+
+    @token_required
+    def get(username, self):
+        return jsonify({"message" : "Token is valid!"})
 
 database = Database()
+api.add_resource(ValidateToken, '/token', resource_class_args=(database,))
 api.add_resource(Login, '/login',resource_class_args=(database,))
 api.add_resource(User, '/user',resource_class_args=(database,))
 api.add_resource(Recipe, '/recipe',resource_class_args=(database,))
