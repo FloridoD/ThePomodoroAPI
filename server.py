@@ -519,7 +519,7 @@ class FollowUser(Resource):
         self.database = database 
     @token_required
     def get(username,self):
-        return self.database.isFollowing(username,requestpars['person'])
+        return self.database.isFollowing(username,request.pars['person'])
     @token_required
     def post(username,self):
         return self.database.follow(username,request.get_json()['person'])
