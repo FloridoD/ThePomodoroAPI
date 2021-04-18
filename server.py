@@ -534,9 +534,8 @@ class Following(Resource):
 class MainScreen(Resource):
     def __init__(self,database):
         self.database = database 
-    @token_required
-    def get(username,self):
-        return self.database.getMainScreen(username,request.args['ini'],request.args['fim'])
+    def get(self):
+        return self.database.getMainScreen(requests.args['username'],request.args['ini'],request.args['fim'])
 class FollowUser(Resource):
     def __init__(self,database):
         self.database = database 
