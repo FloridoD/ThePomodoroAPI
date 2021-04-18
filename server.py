@@ -535,7 +535,7 @@ class MainScreen(Resource):
     def __init__(self,database):
         self.database = database 
     def get(self):
-        return self.database.getMainScreen(requests.args['username'],request.args['ini'],request.args['fim'])
+        return self.database.getMainScreen(request.args['username'],request.args['ini'],request.args['fim'])
 class FollowUser(Resource):
     def __init__(self,database):
         self.database = database 
