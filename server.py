@@ -286,7 +286,7 @@ class Database:
             print(e)
             return jsonify({'message': 'Error'})
     def follow(self,username,person):
-        
+        return ''
     def getFriends(self, user_data):
 
         return ''
