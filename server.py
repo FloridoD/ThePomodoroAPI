@@ -272,10 +272,9 @@ class Database:
             if n == 5:
                 break
         return jsonify(res)
-
+        
     def getRecipeFromText(self, query):
         """Get recipe from text"""
-        def getRecipeFromText(self, query):
         results = self.query("SELECT * FROM recipe WHERE name LIKE '%"+query+"%';")
         return jsonify(results)
 
@@ -309,10 +308,10 @@ class Database:
     def follow(self,username,person):
         try:
             cursor = self.connection.cursor()
-            query = 'UPDATE person SET followers = followers + 1 WHERE username = \'%s\';'%(person))
+            query = 'UPDATE person SET followers = followers + 1 WHERE username = \'%s\';'%(person)
             cursor.execute(query)
             self.connection.commit()
-            query = 'UPDATE person SET following = following + 1 WHERE username = \'%s\';'%(username))
+            query = 'UPDATE person SET following = following + 1 WHERE username = \'%s\';'%(username)
             cursor.execute(query)
             self.connection.commit()
             query = 'INSERT INTO person_person (person_id,person_id1) values ((SELECT id FROM person WHERE username = \'%s\'),(SELECT id FROM person WHERE username = \'%s\'));'%(person,username)
