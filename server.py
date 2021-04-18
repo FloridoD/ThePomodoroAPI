@@ -70,6 +70,7 @@ class Database:
         connection = psycopg2.connect(user = "ylhmlqpfkqbwxu",password = "86acc7cb14978bd57697eaa59022eec26a08f1930662da86502de3e39fd30e0d",host = "ec2-54-247-158-179.eu-west-1.compute.amazonaws.com",port = "5432",database = "dadih75qcq1ih")
         self.connection=connection
         self.ingredientes = self.getAllIngredients()
+        self.updatecountdown = 0
 
     def query(self, query_str):
         cursor = self.connection.cursor()
@@ -86,7 +87,7 @@ class Database:
         cursor = self.connection.cursor()
         cursor.execute("SELECT id FROM person WHERE username = '"+username+"' AND password = '"+password+"';")
         if cursor.rowcount < 1:
-            return make_response('Could not verify', 401, {'WWW-Authenticate' : 'Basic realm="Login Required!"'})
+            return make_response(jsonify({"message":'Could not verify'}), 401, {'WWW-Authenticate' : 'Basic realm="Login Required!"'})
         else:
             expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=30)
 
@@ -187,6 +188,9 @@ class Database:
 
         self.connection.commit()
         cursor.close()
+        self.updatecountdown+=1
+        if(self.updatecountdown%10 == 0):
+            self.ingredientes = self.getAllIngredients()
         return jsonify({'message' : 'sucess'})
 
     def addIngredients(self,ingredientes, recipe_id):
@@ -416,7 +420,7 @@ class Login(Resource):
         auth = request.authorization
 
         if not auth or not auth.username or not auth.password:
-            return make_response('Could not verify', 401, {'WWW-Authenticate' : 'Basic realm="Login Required!"'})
+            return make_response(jsonify({"message":'Could not verify'}), 401, {'WWW-Authenticate' : 'Basic realm="Login Required!"'})
 
         return self.database.login(auth.username, auth.password)
 
@@ -432,7 +436,7 @@ class User(Resource):
 
     def get(self):
         """Retorna os dados dum utilizador"""
-        data = request.get_json()
+        data = request.pars
         return self.database.getUser(data)
     
     @token_required
@@ -455,7 +459,7 @@ class Recipe(Resource):
 
     def get(self):
         """Retorna uma receita com base no id"""
-        id = request.get_json().get('id')
+        id = request.pars.get('id')
         return self.database.getRecipe(id)
 
     def delete(self):
@@ -470,7 +474,7 @@ class SearchByIngredients(Resource):
         return self.database.getRecipesFromIngredients(request.get_json()['ingredients'])
 
     def get(self):
-        return self.database.getIngredientsFromText(request.get_json()['query'])
+        return self.database.getIngredientsFromText(request.pars['query'])
 
 class SearchByName(Resource):
     def __init__(self,database):
@@ -487,7 +491,7 @@ class RateRecipe(Resource):
         return self.database.rateRecipe(username,request.get_json())
     @token_required
     def get(username,self):
-        return self.database.getUsersRateOnRecipe(username,request.get_json()['recipe_id'])
+        return self.database.getUsersRateOnRecipe(username,request.pars['recipe_id'])
     @token_required
     def delete(username,self):
         return self.database.unrateRecipe(username,request.get_json())
@@ -495,7 +499,7 @@ class Followers(Resource):
     def __init__(self,database):
         self.database = database
     def get(self):
-        return self.database.getFollowers(request.get_json()['username'])
+        return self.database.getFollowers(request.pars['username'])
     @token_required
     def delete(username,self):
         return self.database.unfollow(username,request.get_json()['person'])
@@ -503,19 +507,19 @@ class Following(Resource):
     def __init__(self,database):
         self.database = database
     def get(self):
-        return self.database.getFollowing(request.get_json()['username'])
+        return self.database.getFollowing(request.pars['username'])
 class MainScreen(Resource):
     def __init__(self,database):
         self.database = database 
     @token_required
     def get(username,self):
-        return self.database.getMainScreen(username,request.get_json()['ini'],request.get_json()['fim'])
+        return self.database.getMainScreen(username,request.pars['ini'],request.pars['fim'])
 class FollowUser(Resource):
     def __init__(self,database):
         self.database = database 
     @token_required
     def get(username,self):
-        return self.database.isFollowing(username,request.get_json()['person'])
+        return self.database.isFollowing(username,requestpars['person'])
     @token_required
     def post(username,self):
         return self.database.follow(username,request.get_json()['person'])
@@ -523,7 +527,7 @@ class UserRateHistory(Resource):
     def __init__(self,database):
         self.database = database 
     def get(self):
-        return self.database.getRatedRecipes(request.get_json()['username'])
+        return self.database.getRatedRecipes(request.pars['username'])
 
 database = Database()
 api.add_resource(Login, '/login',resource_class_args=(database,))
