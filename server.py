@@ -286,12 +286,13 @@ class Database:
 
     def rateRecipe(self,username,rate_data):
         """Add rating to recipe"""
+        cursor = self.connection.cursor(cursor_factory=RealDictCursor)
         if(self.getUsersRateOnRecipe(username,rate_data['recipe_id']) != None and rate_data['rate'] <= 5 and rate_data["rate"] >= 1):
             try:
-                query = 'INSERT INTO rating (rate, rate_date, recipe_id, person_id) values ('+rate_data['rate']+',CURRENT_TIMESTAMP,'+rate_data['recipe_id']+',(SELECT id FROM person WHERE username = \''+username+'\'));'
+                query = 'INSERT INTO rating (rate, rate_date, recipe_id, person_id) values ('+str(rate_data['rate'])+',CURRENT_TIMESTAMP,'+str(rate_data['recipe_id'])+',(SELECT id FROM person WHERE username = \''+username+'\'));'
                 cursor.execute(query)
                 self.connection.commit()
-                cursor.execute('UPDATE recipe SET rating = rating*(1-1/(rates+1)) + %s*(1/(rates+1)), rates = rates + 1;'%(rate_data['rate']))
+                cursor.execute('UPDATE recipe SET rating = rating*(1-1/(rates+1)) + %s*(1/(rates+1)), rates = rates + 1 WHERE recipe_id = \'%s\';'%(str(rate_data['rate'])),str(rate_data['recipe_id']))
                 self.connection.commit()
                 return jsonify({'message': 'Rating Inserted'})
             except Exception as e:
@@ -302,9 +303,10 @@ class Database:
             return jsonify({'message': 'Error'})
     def unrateRecipe(self,username,rate_data):
         """remove rating to recipe"""
+        cursor = self.connection.cursor(cursor_factory=RealDictCursor)
         if(self.getUsersRateOnRecipe(username,rate_data['recipe_id']) == None):
             try:
-                cursor.execute('UPDATE recipe SET rating = rating*(1-1/(rates)) - (SELECT rate FROM rating WHERE person_id = (SELECT id FROM person WHERE username = \'%s\'))*(1/(rates)), rates = rates - 1;'%(username))
+                cursor.execute('UPDATE recipe SET rating = rating*(1-1/(rates)) - (SELECT rate FROM rating WHERE person_id = (SELECT id FROM person WHERE username = \'%s\'))*(1/(rates)), rates = rates - 1 WHERE recipe_id = \'%s\';'%(username,str(rate_data['recipe_id'])))
                 self.connection.commit()
                 query = 'DELETE FROM rating WHERE recipe_id = \'%s\' AND person_id = (SELECT id FROM person WHERE username = \'%s\');'%(rate_data['recipe_id'],username)
                 cursor.execute(query)
@@ -338,6 +340,7 @@ class Database:
                 cursor.execute(query)
                 self.connection.commit()
                 query = 'INSERT INTO person_person (person_id,person_id1) values ((SELECT id FROM person WHERE username = \'%s\'),(SELECT id FROM person WHERE username = \'%s\'));'%(person,username)
+                cursor.execute(query)
                 self.connection.commit()
                 return jsonify({'message': 'Success'})
             except Exception as e:
@@ -358,6 +361,7 @@ class Database:
                 cursor.execute(query)
                 self.connection.commit()
                 query = 'DELETE FROM person_person WHERE person_id = (SELECT id FROM person WHERE username = \'%s\') AND person_id1 = (SELECT id FROM person WHERE username = \'%s\');'%(person,username)
+                cursor.execute(query)
                 self.connection.commit()
                 return jsonify({'message': 'Success'})
             except Exception as e:
@@ -368,7 +372,7 @@ class Database:
             return jsonify({'message': 'Already not following'})
     def isFollowing(self,username,person):
         query = 'SELECT * FROM person_person WHERE person_id = (SELECT id FROM person WHERE username = \'%s\') AND person_id1 = (SELECT id FROM person WHERE username = \'%s\');'%(person,username)
-        if self.query() != None:
+        if self.query(query) == None:
             return False
         else:
             return True
@@ -387,15 +391,20 @@ class Database:
         return jsonify(results)
 
     def getMainScreen(self, username, ini, fim):
-        following = self.getFollowing(username)
-        query = 'SELECT recipe.*, rate, rate_date FROM recipe, rating WHERE rating.person_id IN ('
-        for i in following:
-            query+=i['id']+","
-        query = query[:-1] + ') AND recipe.id = rating.recipe_id ORDER BY date_rate DESC;'%(username)
-        results = self.query(query)
-        if fim >= len(results):
-            fim = len(results)-1
-        return results[ini:fim]
+        try:
+            query = 'SELECT username, id, name FROM person,person_person WHERE id = person_id AND person_id1 = (SELECT id FROM person WHERE username = \'%s\');'%(username)
+            following = self.query(query)
+            query = 'SELECT recipe.*, rate, rate_date FROM recipe, rating WHERE rating.person_id IN ('
+            for i in following["results"]:
+                query+=str(i['id'])+","
+            query = query[:-1] + ') AND recipe.id = rating.recipe_id ORDER BY rate_date DESC;'
+            print(query)
+            results = self.query(query)
+            if fim >= len(results):
+                fim = len(results)-1
+            return results[ini:fim]
+        except:
+            return jsonify({'message': 'Nothing to see'})
 
 class Login(Resource):
     def __init__(self,database):
@@ -472,13 +481,13 @@ class RateRecipe(Resource):
     def __init__(self,database):
         self.database = database
     @token_required
-    def post(self,username):
+    def post(username,self):
         return self.database.rateRecipe(username,request.get_json())
     @token_required
-    def get(self,username):
+    def get(username,self):
         return self.database.getUsersRateOnRecipe(username,request.get_json()['recipe_id'])
     @token_required
-    def delete(self,username):
+    def delete(username,self):
         return self.database.unrateRecipe(username,request.get_json())
 class Followers(Resource):
     def __init__(self,database):
@@ -486,7 +495,7 @@ class Followers(Resource):
     def get(self):
         return self.database.getFollowers(request.get_json()['username'])
     @token_required
-    def delete(self,username):
+    def delete(username,self):
         return self.database.unfollow(username,request.get_json()['person'])
 class Following(Resource):
     def __init__(self,database):
@@ -497,22 +506,23 @@ class MainScreen(Resource):
     def __init__(self,database):
         self.database = database 
     @token_required
-    def get(self,username):
+    def get(username,self):
         return self.database.getMainScreen(username,request.get_json()['ini'],request.get_json()['fim'])
 class FollowUser(Resource):
     def __init__(self,database):
         self.database = database 
     @token_required
-    def get(self,username):
+    def get(username,self):
         return self.database.isFollowing(username,request.get_json()['person'])
     @token_required
-    def post(self,username):
+    def post(username,self):
         return self.database.follow(username,request.get_json()['person'])
 class UserRateHistory(Resource):
     def __init__(self,database):
         self.database = database 
     def get(self):
         return self.database.getRatedRecipes(request.get_json()['username'])
+
 database = Database()
 api.add_resource(Login, '/login',resource_class_args=(database,))
 api.add_resource(User, '/user',resource_class_args=(database,))
