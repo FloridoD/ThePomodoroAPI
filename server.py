@@ -31,12 +31,12 @@ def upload_local_image():
     with open("image.jpg", "rb") as f:
         data = f.read()
         image = bytearray(data)
-        url = cloudinary.uploader.unsigned_upload(image, preset, cloud_name = "the-pomodoro").get('url')
+        url = cloudinary.uploader.unsigned_upload(image, preset, cloud_name = cloud).get('url')
 
     return url
 
 def upload_image(image):
-    return cloudinary.uploader.unsigned_upload(image, preset, cloud_name = "the-pomodoro").get('url')
+    return cloudinary.uploader.unsigned_upload(image, preset, cloud_name = cloud).get('url')
 
 def token_required(f):
     @wraps(f)
@@ -301,7 +301,7 @@ class Database:
                 return jsonify({'message': 'Error'})
         else:
             return jsonify({'message': 'User already voted'})
-            
+
     def getUsersRateOnRecipe(self, user, recipe):
         try:
             query = "SELECT rate FROM rating WHERE person_id = (SELECT id FROM person WHERE username = %s) AND recipe_id = \'%\'"%(user,recipe)
@@ -336,17 +336,16 @@ class Database:
             return False
         else:
             return True
-    def getFriends(self, user_data):
+    
+    def feed(self, username):
+        query = f"SELECT person_id1 FROM person_person WHERE person_id = (SELECT person_id from person where username = {username});"
+        results = self.query(query)
 
-        return ''
+        if results == 'None': return jsonify({"message" : "There are no recipes in timeline"})
 
-    def getFriendsRecipes(self, user_data):
+        users = results.get('results')
 
-        return ''
-
-    def getLikedRecipes(self, user_data):
-
-        return ''
+        query = f"SELECT "
 
 class Login(Resource):
     def __init__(self,database):
@@ -428,6 +427,15 @@ class Rate(Resource):
     @token_required
     def get(self,username):
         return self.database.getUsersRateOnRecipe(username,request.get_json()['recipe_id'])
+
+class Feed(Resource):
+    def __init__(self,database):
+        self.database = database
+    
+    @token_required
+    def get(self,username):
+        data = request.get_json()
+
 
 database = Database()
 api.add_resource(Login, '/login',resource_class_args=(database,))
