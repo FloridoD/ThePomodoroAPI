@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from logging import NullHandler
+from typing import NoReturn
 from flask import Flask, request, jsonify, make_response
 from flask.helpers import make_response
 from flask_restful import Api, Resource, reqparse, abort, fields, marshal_with
 from flask_sqlalchemy import SQLAlchemy
-from flask_cors import CORS, cross_origin
 from psycopg2.extras import RealDictCursor
+import cloudinary
+from cloudinary.uploader import upload
+from cloudinary.utils import cloudinary_url
 import psycopg2, uuid
 import json
 from functools import wraps
@@ -18,8 +20,24 @@ import os
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secretkey' #str(uuid.uuid1())
 api = Api(app)
-CORS(app, support_credentials=True)
 
+cloud = "the-pomodoro"
+preset = "atzts87s"
+
+def upload_local_image():
+    """Uploads image to cloudinary database and returns url"""
+    url = None
+
+    with open("image.jpg", "rb") as f:
+        data = f.read()
+        image = bytearray(data)
+        url = cloudinary.uploader.unsigned_upload(image, preset, cloud_name = "the-pomodoro").get('url')
+
+    return url
+
+def upload_image(image):
+    return cloudinary.uploader.unsigned_upload(image, preset, cloud_name = "the-pomodoro").get('url')
+    
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -290,8 +308,7 @@ class Database:
 class Login(Resource):
     def __init__(self,database):
         self.database = database
-        
-    @cross_origin(supports_credentials=True)
+
     def get(self):
         auth = request.authorization
 
@@ -375,4 +392,5 @@ api.add_resource(SearchByIngredients, '/search_by_ingredients',resource_class_ar
 api.add_resource(SearchByName, '/search_by_name',resource_class_args=(database,))
 
 if __name__ == "__main__": 
+    #upload_image()
     app.run(debug=True)
